@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,7 +31,59 @@ public sealed class McpAccessMiddleware(
         "resources/templates/list", "notifications/initialized"
     };
 
+    /// <summary>Cap on how much request body will be buffered to identify the method.</summary>
+    private const int MaxPeekBytes = 64 * 1024;
+
     private readonly McpAuthOptions _options = options.Value;
+
+    /// <summary>
+    /// Identifies the JSON-RPC method being invoked.
+    /// </summary>
+    /// <remarks>
+    /// The <c>Mcp-Method</c> header only exists from the 2026-07-28 revision onwards. Claude's
+    /// <c>initialize</c> handshake predates it and sends the method in the body alone, so
+    /// header-only classification treats every connection attempt as non-discovery and answers
+    /// 401 — which the client reports as an authentication failure. Falling back to the body
+    /// keeps older clients working. The body is buffered and rewound so the MCP handler can
+    /// still read it.
+    /// </remarks>
+    private static async Task<string> ResolveMethodAsync(HttpContext context)
+    {
+        var header = context.Request.Headers["Mcp-Method"].ToString();
+        if (!string.IsNullOrEmpty(header))
+        {
+            return header;
+        }
+
+        // Anything oversized is not a discovery call; leave it to the authenticated path.
+        if (context.Request.ContentLength is null or 0 or > MaxPeekBytes)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            context.Request.EnableBuffering();
+            using var document = await JsonDocument
+                .ParseAsync(context.Request.Body).ConfigureAwait(false);
+
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("method", out var m)
+                && m.ValueKind == JsonValueKind.String
+                    ? m.GetString() ?? string.Empty
+                    : string.Empty;
+        }
+        catch (JsonException)
+        {
+            // Not JSON we understand; the MCP handler will reject it on its own terms.
+            return string.Empty;
+        }
+        finally
+        {
+            // Rewind unconditionally so the handler downstream sees the full body.
+            context.Request.Body.Position = 0;
+        }
+    }
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -79,9 +132,7 @@ public sealed class McpAccessMiddleware(
             return;
         }
 
-        // The 2026-07-28 revision requires clients to mirror the JSON-RPC method into this
-        // header, so the request can be classified without buffering the body.
-        var method = context.Request.Headers["Mcp-Method"].ToString();
+        var method = await ResolveMethodAsync(context).ConfigureAwait(false);
 
         if (_options.AllowAnonymousDiscovery && DiscoveryMethods.Contains(method))
         {
@@ -94,12 +145,15 @@ public sealed class McpAccessMiddleware(
             "Refused unauthenticated MCP request (method {Method})",
             string.IsNullOrEmpty(method) ? "<none>" : method);
 
+        // Deliberately no WWW-Authenticate header. This server authenticates with a static
+        // API key, not OAuth, and Claude treats a 401 carrying WWW-Authenticate as the start of
+        // an OAuth handshake: it probes /.well-known/oauth-protected-resource, finds nothing,
+        // and reports "Authentication failed" instead of surfacing the real problem.
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        context.Response.Headers.WWWAuthenticate = "Bearer realm=\"linnworks-mcp\"";
         await context.Response.WriteAsJsonAsync(new
         {
-            error = "Unauthorized. Supply a configured MCP client API key as "
-                  + "'Authorization: Bearer <key>' or 'X-Api-Key: <key>'."
+            error = "Unauthorized. Supply the configured MCP client API key as "
+                  + "'X-Api-Key: <key>' or 'Authorization: Bearer <key>'."
         }).ConfigureAwait(false);
     }
 }

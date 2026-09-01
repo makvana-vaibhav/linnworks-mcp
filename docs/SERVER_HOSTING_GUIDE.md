@@ -74,6 +74,98 @@ Expected response: `{"status":"Healthy"}`.
 
 ---
 
+---
+
+## 🔌 Connecting from Claude (claude.ai)
+
+### What the server expects
+
+| | |
+|---|---|
+| **URL** | `https://linnworks-mcp.rishvi.app/mcp` (note the `/mcp` path) |
+| **Auth header** | `X-Api-Key: <your McpAuth__ApiKey>` |
+| **Discovery** | `initialize` and `tools/list` answer **without** a key, so Claude's connection probe succeeds |
+| **Execution** | every `tools/call` requires the key, or returns `401` |
+
+The server does **not** use OAuth, and deliberately does not send `WWW-Authenticate` on its
+401. Claude treats a 401 carrying that header as the start of an OAuth handshake, probes
+`/.well-known/oauth-protected-resource`, finds nothing, and reports "Authentication failed"
+instead of the real problem.
+
+### Steps
+
+1. In Claude, go to **Settings → Connectors** (Team/Enterprise owners: **Organization settings
+   → Connectors**) and choose **Add custom connector**.
+2. **Name**: `Linnworks`.
+3. **Remote MCP server URL**: `https://linnworks-mcp.rishvi.app/mcp`
+4. **Authentication**: choose **None**. The API key is not OAuth — it goes in a request header.
+5. Open **Request headers**, select **`x-api-key`** from the list, and paste the value of
+   `McpAuth__ApiKey`. Mark it **Required**.
+6. Click **Add**, then enable the connector in a chat via the **+** menu → **Connectors**.
+
+> Authentication settings cannot be edited after a connector is added. To change the key,
+> remove the connector and add it again.
+
+### If you don't see a "Request headers" section
+
+Request-header auth is in beta and limited to some organizations. Without it Claude cannot
+send the key, and every tool call will return 401. Two options:
+
+**A. Restrict by network instead (recommended).** Claude's outbound traffic comes from
+Anthropic's published range `160.79.104.0/21`. Allow only that at Nginx and run the MCP
+endpoint without a key:
+
+```nginx
+location /mcp {
+    allow 160.79.104.0/21;   # Anthropic egress
+    allow <your-office-ip>;  # your own testing
+    deny all;
+
+    proxy_pass http://127.0.0.1:5000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_buffering off;     # Streamable HTTP responses are streamed
+}
+```
+
+Then set `McpAuth__RequireApiKey=false` in `.env`. Note the limitation honestly: that range
+is shared by all Anthropic customers, so it stops internet-wide scanning but not another
+Claude user who knows your URL. Keep `McpAuth__AllowDestructiveTools=false` under this setup.
+
+**B. Use Claude Code or Claude Desktop**, which support custom headers today:
+
+```bash
+claude mcp add --transport http linnworks https://linnworks-mcp.rishvi.app/mcp \
+  --header "X-Api-Key: <your McpAuth__ApiKey>"
+```
+
+### Verifying from the server
+
+```bash
+# 1. Discovery must be 200 without a key (or Claude cannot connect at all)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://linnworks-mcp.rishvi.app/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}'
+
+# 2. A tool call without the key must be 401
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://linnworks-mcp.rishvi.app/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_locations","arguments":{}}}'
+
+# 3. The same call with the key must return locations
+curl -s -X POST https://linnworks-mcp.rishvi.app/mcp \
+  -H "X-Api-Key: $McpAuth__ApiKey" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_locations","arguments":{}}}'
+
+# 4. Confirm the auth posture the server booted with
+docker compose logs | grep "MCP endpoint"
+```
+
+Expected: `200`, `401`, a JSON list of locations, and
+`MCP endpoint requires a client API key. Anonymous discovery: allowed.`
+
 ## 🌐 Step 4: Configure Nginx Reverse Proxy
 
 Create Nginx site configuration at `/etc/nginx/sites-available/linnworks-mcp.rishvi.app`:
