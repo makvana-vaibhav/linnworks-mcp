@@ -1,0 +1,25 @@
+# Build and output directories
+bin/
+obj/
+out/
+dist/
+publish/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*~
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Secrets & Environment files
+.env
+.env.local
+*.pem
+*.key

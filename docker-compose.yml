@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  linnworks-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: linnworks-mcp:latest
+    container_name: linnworks-mcp-server
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - LINNWORKS_MCP_TRANSPORT=http
+      - McpAuth__ApiKey=dev-secret-key-change-in-production
+      - Linnworks__AuthUrl=https://api.linnworks.net/api/Auth/AuthorizeByApplication
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

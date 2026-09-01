@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LinnworksMcp/LinnworksMcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LinnworksMcp.IntegrationTests/LinnworksMcp.IntegrationTests.csproj" />
+    <Project Path="tests/LinnworksMcp.Tests/LinnworksMcp.Tests.csproj" />
+  </Folder>
+</Solution>
