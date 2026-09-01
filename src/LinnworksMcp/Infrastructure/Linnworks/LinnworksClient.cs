@@ -18,15 +18,8 @@ public interface ILinnworksClient
 }
 
 /// <summary>
-/// Authorized wrapper over the Linnworks REST API. Resolves the caller's session, routes to that
-/// account's region, applies client-side throttling, and normalises every failure into
-/// <see cref="LinnworksApiException"/>.
+/// Authorized HTTP client wrapper over Linnworks REST API endpoints with regional routing and error handling.
 /// </summary>
-/// <remarks>
-/// Retry/backoff for 429 and 5xx is applied by the Polly pipeline on the named
-/// <see cref="HttpClient"/> (see <c>ServiceCollectionExtensions</c>); this class adds the
-/// one thing Polly cannot do generically — invalidate a dead session and re-authorize once.
-/// </remarks>
 public sealed class LinnworksClient(
     HttpClient httpClient,
     ILinnworksAuthManager authManager,
@@ -62,8 +55,6 @@ public sealed class LinnworksClient(
     {
         var credentials = credentialProvider.GetCredentials();
 
-        // One retry only, and only for an auth failure: a session can die before its TTL is up
-        // (revoked token, server-side expiry), and re-authorizing recovers cleanly.
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -82,8 +73,7 @@ public sealed class LinnworksClient(
                 when (ex.Kind == LinnworksErrorKind.Authentication && attempt == 1)
             {
                 logger.LogWarning(
-                    "Linnworks rejected the session for user {UserId} calling {Path} — "
-                    + "re-authorizing and retrying once",
+                    "Linnworks rejected session for user {UserId} calling {Path} — re-authorizing",
                     credentials.UserId,
                     path);
 
@@ -116,8 +106,6 @@ public sealed class LinnworksClient(
         }
 
         using var request = new HttpRequestMessage(method, uri);
-
-        // Linnworks expects the bare session token — no "Bearer" prefix, and not AccessToken.
         request.Headers.TryAddWithoutValidation("Authorization", session.Token);
 
         if (createContent is not null)
@@ -137,7 +125,6 @@ public sealed class LinnworksClient(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // Cancellation we did not ask for means the HttpClient timeout elapsed.
             metrics.RecordUpstreamCall(path, stopwatch.Elapsed, success: false);
             throw LinnworksApiException.Timeout(path);
         }
@@ -210,10 +197,6 @@ public sealed class LinnworksClient(
         }
     }
 
-    /// <summary>
-    /// Builds the absolute URL from the account's region-specific server. Mirrors rishvi-agent:
-    /// a Server value without a scheme is assumed to be https, and a trailing slash is trimmed.
-    /// </summary>
     internal static Uri BuildUri(string server, string path, IReadOnlyDictionary<string, string?>? query)
     {
         var baseUrl = server.StartsWith("http", StringComparison.OrdinalIgnoreCase)
@@ -234,7 +217,6 @@ public sealed class LinnworksClient(
         return builder.Uri;
     }
 
-    /// <summary>Debug-only repro hint. The Authorization value is never included.</summary>
     private static string BuildCurlCommand(HttpMethod method, Uri uri, bool hasBody)
     {
         var body = hasBody ? " -d '<request body omitted>'" : string.Empty;
@@ -242,3 +224,4 @@ public sealed class LinnworksClient(
              + $"-H \"Authorization: <REDACTED>\"{body}";
     }
 }
+

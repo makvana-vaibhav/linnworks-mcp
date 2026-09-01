@@ -21,20 +21,12 @@ public static class ServiceCollectionExtensions
     public const string LinnworksHttpClient = "linnworks";
     public const string LinnworksAuthHttpClient = "linnworks-auth";
 
-    /// <summary>
-    /// Registers the Linnworks infrastructure, application services and observability.
-    /// Credential resolution differs per transport and is registered separately by the caller.
-    /// </summary>
     public static IServiceCollection AddLinnworks(this IServiceCollection services)
     {
         services.AddSingleton<ToolMetrics>();
         services.AddSingleton<EndpointRateLimiter>();
         services.AddSingleton(TimeProvider.System);
 
-        // The auth manager MUST be a singleton — its session cache is the whole point, and a
-        // per-instance cache would re-authenticate on every tool call. That rules out
-        // AddHttpClient<TInterface,TImpl>, whose typed-client registration is transient, so the
-        // HttpClient is registered by name and resolved through IHttpClientFactory instead.
         services.AddHttpClient(LinnworksAuthHttpClient, ConfigureTimeout)
             .AddResilienceHandler("linnworks-auth", BuildTransientPipeline);
 
@@ -61,16 +53,10 @@ public static class ServiceCollectionExtensions
         var options = provider.GetRequiredService<
             Microsoft.Extensions.Options.IOptions<LinnworksOptions>>().Value;
 
-        // Per-call cancellation is separate and always wins if it fires first.
         client.Timeout = options.HttpTimeout;
         client.DefaultRequestHeaders.Accept.Add(new("application/json"));
     }
 
-    /// <summary>
-    /// Retries 429 and 5xx with exponential backoff plus jitter, honouring Retry-After when
-    /// Linnworks supplies one. Capped so a sustained outage surfaces as an error rather than
-    /// retrying forever.
-    /// </summary>
     private static void BuildTransientPipeline(
         ResiliencePipelineBuilder<HttpResponseMessage> builder,
         ResilienceHandlerContext context)
@@ -84,7 +70,6 @@ public static class ServiceCollectionExtensions
 
         builder.AddRetry(new HttpRetryStrategyOptions
         {
-            // MaxRetryAttempts excludes the initial attempt.
             MaxRetryAttempts = Math.Max(0, options.MaxRetryAttempts - 1),
             BackoffType = DelayBackoffType.Exponential,
             UseJitter = true,
@@ -95,7 +80,6 @@ public static class ServiceCollectionExtensions
                    && (response.StatusCode == HttpStatusCode.TooManyRequests
                        || (int)response.StatusCode >= 500)),
 
-            // Respect an explicit Retry-After over our own backoff curve.
             DelayGenerator = static args =>
             {
                 var retryAfter = args.Outcome.Result?.Headers.RetryAfter;
@@ -113,7 +97,6 @@ public static class ServiceCollectionExtensions
                     }
                 }
 
-                // null lets the configured exponential-with-jitter delay apply.
                 return ValueTask.FromResult<TimeSpan?>(null);
             },
 
@@ -129,8 +112,7 @@ public static class ServiceCollectionExtensions
                 }
 
                 logger.LogWarning(
-                    "Retrying Linnworks {Path} (attempt {Attempt}) after {Status}; waiting {DelayMs}ms "
-                    + "[correlation id: {CorrelationId}]",
+                    "Retrying Linnworks {Path} (attempt {Attempt}) after {Status}; waiting {DelayMs}ms [correlation id: {CorrelationId}]",
                     path,
                     args.AttemptNumber + 1,
                     status is null ? "transport failure" : ((int)status).ToString(),
@@ -142,3 +124,4 @@ public static class ServiceCollectionExtensions
         });
     }
 }
+

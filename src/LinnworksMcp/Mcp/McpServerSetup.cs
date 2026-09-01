@@ -7,9 +7,6 @@ namespace LinnworksMcp.Mcp;
 
 public static class McpServerSetup
 {
-    /// <summary>
-    /// Registers the MCP server and every tool type.
-    /// </summary>
     public static IMcpServerBuilder AddLinnworksMcpServer(this IServiceCollection services)
     {
         var version = Assembly.GetExecutingAssembly()
@@ -42,13 +39,6 @@ public static class McpServerSetup
             .WithTools<StockTools>()
             .WithTools<OrderTools>()
             .WithTools<LocationTools>();
-
-        // ListingTools, CustomerTools, ShippingTools, PurchaseOrderTools and ReturnTools are
-        // deliberately NOT registered. Every endpoint they call was written from a guessed method
-        // name and returns 404 — Linnworks' real names differ (see the verified paths in each
-        // service's TODO block). An agent that cannot see a tool says "I can't do that"; one that
-        // sees a broken tool burns turns on it and blames the caller's configuration. Re-register
-        // each type here once its request and response schemas have been verified against
-        // https://apidocs.linnworks.net/reference/<slug>.md.
     }
 }
+

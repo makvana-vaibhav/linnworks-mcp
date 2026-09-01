@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Net;
 using System.Net.Http.Json;
 using LinnworksMcp.Infrastructure.Linnworks;
@@ -34,9 +35,8 @@ public class LinnworksAuthManagerTests
                 Content = JsonContent.Create(expectedSession)
             });
 
-        var httpClient = new HttpClient(handlerMock.Object);
         var manager = new LinnworksAuthManager(
-            httpClient,
+            StubHttpClientFactory.For(handlerMock.Object),
             Options.Create(_options),
             NullLogger<LinnworksAuthManager>.Instance,
             _timeProvider);
@@ -84,9 +84,8 @@ public class LinnworksAuthManagerTests
                 Content = JsonContent.Create(refreshedSession)
             });
 
-        var httpClient = new HttpClient(handlerMock.Object);
         var manager = new LinnworksAuthManager(
-            httpClient,
+            StubHttpClientFactory.For(handlerMock.Object),
             Options.Create(_options),
             NullLogger<LinnworksAuthManager>.Instance,
             _timeProvider);
@@ -126,9 +125,8 @@ public class LinnworksAuthManagerTests
                 Content = JsonContent.Create(CreateMockSession("token-" + Guid.NewGuid(), ttl: 3600))
             });
 
-        var httpClient = new HttpClient(handlerMock.Object);
         var manager = new LinnworksAuthManager(
-            httpClient,
+            StubHttpClientFactory.For(handlerMock.Object),
             Options.Create(_options),
             NullLogger<LinnworksAuthManager>.Instance,
             _timeProvider);
@@ -157,9 +155,8 @@ public class LinnworksAuthManagerTests
                 Content = new StringContent("Invalid credentials")
             });
 
-        var httpClient = new HttpClient(handlerMock.Object);
         var manager = new LinnworksAuthManager(
-            httpClient,
+            StubHttpClientFactory.For(handlerMock.Object),
             Options.Create(_options),
             NullLogger<LinnworksAuthManager>.Instance,
             _timeProvider);
@@ -187,5 +184,16 @@ public class LinnworksAuthManagerTests
         private DateTimeOffset _now = DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow() => _now;
         public void Advance(TimeSpan delta) => _now = _now.Add(delta);
+    }
+
+    /// <summary>
+    /// Hands the auth manager an <see cref="HttpClient"/> over the mocked handler, standing in
+    /// for the named client it would resolve from DI.
+    /// </summary>
+    private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public static IHttpClientFactory For(HttpMessageHandler handler) => new StubHttpClientFactory(handler);
+
+        public HttpClient CreateClient(string name) => new(handler);
     }
 }

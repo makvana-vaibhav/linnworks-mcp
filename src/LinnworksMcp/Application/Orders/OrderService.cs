@@ -4,25 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace LinnworksMcp.Application.Orders;
 
-/// <summary>Order reads.</summary>
 public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> logger)
 {
     internal const string GetOpenOrdersPath = "/api/Orders/GetOpenOrders";
     internal const string GetOrdersByIdPath = "/api/Orders/GetOrdersById";
 
-    /// <summary>
-    /// Page-based open-order listing via <c>POST /api/Orders/GetOpenOrders</c>.
-    /// </summary>
-    /// <param name="locationId">
-    /// Fulfilment centre to filter to, or <see langword="null"/> for every location.
-    /// </param>
-    /// <remarks>
-    /// Uses the Orders namespace rather than <c>OpenOrders/GetOpenOrders</c>, which requires a
-    /// <c>ViewId</c> matching a saved view that actually exists in the account and 400s otherwise.
-    /// This variant has no required fields, so it works on any account without setup.
-    /// The response carries a real <c>TotalEntries</c>, so paging metadata is exact rather than
-    /// inferred — which also makes "how many open orders are there?" answerable with pageSize 1.
-    /// </remarks>
     public async Task<PagedResult<Order>> GetOpenOrdersAsync(
         string? locationId,
         int pageNumber,
@@ -51,9 +37,6 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
             orders, pageNumber, pageSize, totalCount: response.TotalEntries);
     }
 
-    /// <summary>
-    /// Full detail for specific orders via <c>POST /api/Orders/GetOrdersById</c>.
-    /// </summary>
     public async Task<IReadOnlyList<Order>> GetOrdersByIdAsync(
         IReadOnlyList<string> orderIds,
         CancellationToken cancellationToken)
@@ -68,15 +51,6 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         return response.Select(Project).ToList();
     }
 
-    /// <summary>
-    /// Open orders that are not yet dispatched, enriched with full item and shipping detail.
-    /// </summary>
-    /// <remarks>
-    /// Combines <c>GetOpenOrders</c> with <c>GetOrdersById</c> because "what still needs
-    /// shipping, and what is in each one" is a single question a user actually asks — the list
-    /// call alone often omits item-level detail. Cancellation is checked between the two calls
-    /// so an aborted request does not pay for the second one.
-    /// </remarks>
     public async Task<PagedResult<Order>> GetUnfulfilledOrdersAsync(
         string? locationId,
         int pageNumber,
@@ -86,8 +60,6 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         var page = await GetOpenOrdersAsync(locationId, pageNumber, pageSize, cancellationToken)
             .ConfigureAwait(false);
 
-        // The endpoint returns only open orders, so Processed is false throughout. The filter is
-        // kept as a guard in case a future Linnworks change starts including processed rows.
         var unprocessed = page.Items.Where(o => !o.Processed).ToList();
         if (unprocessed.Count == 0)
         {
@@ -99,7 +71,6 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         var detailed = await GetOrdersByIdAsync(
             [.. unprocessed.Select(o => o.OrderId)], cancellationToken).ConfigureAwait(false);
 
-        // Fall back to the list projection for anything the detail call did not return.
         var byId = detailed.ToDictionary(o => o.OrderId, StringComparer.OrdinalIgnoreCase);
         var merged = unprocessed
             .Select(o => byId.TryGetValue(o.OrderId, out var full) ? full : o)
@@ -114,7 +85,6 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         NumOrderId = o.NumOrderId,
         Processed = o.Processed,
         ProcessedDateTime = o.ProcessedDateTime,
-        // Open orders carry the location on GeneralInfo; processed orders on the root.
         FulfilmentLocationId = o.FulfilmentLocationId ?? o.GeneralInfo?.Location,
         Source = o.GeneralInfo?.Source,
         SubSource = o.GeneralInfo?.SubSource,
@@ -138,3 +108,4 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         }).ToList()
     };
 }
+

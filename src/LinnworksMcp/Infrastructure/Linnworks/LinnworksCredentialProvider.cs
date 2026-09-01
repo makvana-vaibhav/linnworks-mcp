@@ -5,17 +5,9 @@ namespace LinnworksMcp.Infrastructure.Linnworks;
 
 public interface ILinnworksCredentialProvider
 {
-    /// <summary>
-    /// Resolves the calling tenant's credentials.
-    /// </summary>
     LinnworksCredentials GetCredentials();
 }
 
-/// <summary>
-/// Hybrid credential provider:
-/// 1. If HTTP headers (X-Linnworks-*) are present in the request, uses per-request user credentials (SaaS chatbot mode).
-/// 2. If headers are absent, falls back to server-configured credentials (Claude Web Connector mode).
-/// </summary>
 public sealed class HeaderLinnworksCredentialProvider(
     IHttpContextAccessor httpContextAccessor,
     IOptions<LinnworksOptions> options)
@@ -37,7 +29,6 @@ public sealed class HeaderLinnworksCredentialProvider(
             var applicationSecret = Read(context, ApplicationSecretHeader);
             var token = Read(context, TokenHeader);
 
-            // If per-request header credentials are fully provided, use them (SaaS multi-tenant chatbot mode)
             if (!string.IsNullOrWhiteSpace(applicationId) &&
                 !string.IsNullOrWhiteSpace(applicationSecret) &&
                 !string.IsNullOrWhiteSpace(token))
@@ -50,7 +41,6 @@ public sealed class HeaderLinnworksCredentialProvider(
             }
         }
 
-        // Fallback: If headers are missing (e.g. Claude Web connector), use server-configured default credentials
         var fallback = options.Value.Stdio;
         if (fallback.IsComplete)
         {
@@ -71,9 +61,6 @@ public sealed class HeaderLinnworksCredentialProvider(
         context.Request.Headers.TryGetValue(header, out var values) ? values.ToString() : null;
 }
 
-/// <summary>
-/// Supplies credentials from configuration. Used by the stdio transport.
-/// </summary>
 public sealed class ConfiguredLinnworksCredentialProvider(IOptions<LinnworksOptions> options)
     : ILinnworksCredentialProvider
 {
@@ -85,8 +72,7 @@ public sealed class ConfiguredLinnworksCredentialProvider(IOptions<LinnworksOpti
         {
             throw new LinnworksApiException(
                 LinnworksErrorKind.Validation,
-                "The server has no Linnworks credentials configured. Set Linnworks__Stdio__ApplicationId, "
-                + "Linnworks__Stdio__ApplicationSecret and Linnworks__Stdio__Token.",
+                "The server has no Linnworks credentials configured. Set Linnworks__Stdio__ApplicationId, Linnworks__Stdio__ApplicationSecret and Linnworks__Stdio__Token.",
                 "stdio credentials are missing or incomplete in configuration.");
         }
 
@@ -97,3 +83,4 @@ public sealed class ConfiguredLinnworksCredentialProvider(IOptions<LinnworksOpti
             _stdio.Token!);
     }
 }
+

@@ -15,19 +15,10 @@ public interface ILinnworksAuthManager
 }
 
 /// <summary>
-/// Caches one authorized Linnworks session per tenant, refreshing it shortly before it expires.
-/// Registered as a singleton so the cache is process-wide.
+/// Caches authorized Linnworks sessions per tenant with TTL-based refresh and concurrency locks.
 /// </summary>
-/// <remarks>
-/// Mirrors rishvi-agent's <c>LinnworksAuthManager</c>: cache keyed by caller-supplied user id,
-/// expiry taken from the response TTL, refresh 60s early, region routing via the response
-/// <c>Server</c> field. It additionally fixes two defects in that implementation — concurrent
-/// callers for one tenant no longer each fire their own authorize request, and re-presenting a
-/// user id with changed credentials evicts the stale session instead of continuing to serve it.
-/// </remarks>
 public sealed class LinnworksAuthManager : ILinnworksAuthManager
 {
-    /// <summary>Named <see cref="HttpClient"/> carrying the timeout and retry pipeline.</summary>
     public const string AuthHttpClientName = "linnworks-auth";
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -49,8 +40,6 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
         ILogger<LinnworksAuthManager> logger,
         TimeProvider? timeProvider = null)
     {
-        // A factory rather than an injected HttpClient: this type must be a singleton for the
-        // session cache to be shared, and AddHttpClient's typed-client registration is transient.
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
@@ -66,12 +55,10 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
             return cached;
         }
 
-        // Single-flight: only one authorize request per tenant is in flight at a time.
         var gate = _locks.GetOrAdd(credentials.UserId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Another caller may have populated the cache while we waited.
             if (TryGetValidSession(credentials, out cached))
             {
                 return cached;
@@ -102,8 +89,6 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
             return false;
         }
 
-        // Same user id presented with different credentials — the cached session belongs to
-        // whoever authenticated first and must not be handed to a different caller.
         if (!string.Equals(cached.Fingerprint, credentials.Fingerprint, StringComparison.Ordinal))
         {
             _logger.LogInformation(
@@ -134,7 +119,6 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
         _logger.LogInformation(
             "Authorizing user {UserId} against Linnworks", credentials.UserId);
 
-        // Body is PascalCase. No Authorization header on this call.
         var body = new AuthorizeRequest(
             credentials.ApplicationId,
             credentials.ApplicationSecret,
@@ -173,16 +157,12 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
                     credentials.UserId,
                     (int)response.StatusCode);
 
-                // On this endpoint any 4xx means the supplied credentials were not accepted —
-                // Linnworks answers bad application credentials with 400, not 401 — so report it
-                // as an authentication failure rather than a generic upstream error.
                 if ((int)response.StatusCode is >= 400 and < 500)
                 {
                     throw new LinnworksApiException(
                         LinnworksErrorKind.Authentication,
                         "Authentication failed — session may have expired or credentials are invalid.",
-                        $"AuthorizeByApplication rejected the credentials "
-                        + $"[{(int)response.StatusCode}]: {errorBody}",
+                        $"AuthorizeByApplication rejected the credentials [{(int)response.StatusCode}]: {errorBody}",
                         response.StatusCode);
                 }
 
@@ -210,9 +190,7 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
                     "AuthorizeByApplication returned no usable session token.");
             }
 
-            // TTL is in seconds, and expiry runs from when the response was parsed.
             var expiresAt = _timeProvider.GetUtcNow().AddSeconds(session.Ttl);
-
             _sessions[credentials.UserId] = new CachedSession(session, expiresAt, credentials.Fingerprint);
 
             _logger.LogInformation(
@@ -233,3 +211,4 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
         string ApplicationSecret,
         string Token);
 }
+

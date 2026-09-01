@@ -6,11 +6,10 @@ using Microsoft.Extensions.Options;
 namespace LinnworksMcp.Infrastructure.Auth;
 
 /// <summary>
-/// Policy check that runs before a tool body executes.
+/// Policy check executed before a tool runs.
 /// </summary>
 public interface IToolAuthorizer
 {
-    /// <exception cref="LinnworksApiException">Thrown when the caller may not invoke the tool.</exception>
     Task AuthorizeAsync(string toolName, bool destructive, CancellationToken cancellationToken);
 }
 
@@ -18,15 +17,9 @@ public sealed class McpAuthOptions
 {
     public const string SectionName = "McpAuth";
 
-    /// <summary>Single API key helper (e.g., McpAuth__ApiKey=key).</summary>
     public string? ApiKey { get; set; }
-
-    /// <summary>Bearer or X-Api-Key values permitted to connect over the network transport.</summary>
     public string[] ClientApiKeys { get; set; } = [];
 
-    /// <summary>
-    /// Returns all configured valid API keys (combining ApiKey and ClientApiKeys).
-    /// </summary>
     public IReadOnlyList<string> GetAllValidKeys()
     {
         var list = new List<string>(ClientApiKeys);
@@ -37,36 +30,9 @@ public sealed class McpAuthOptions
         return list;
     }
 
-    /// <summary>
-    /// When false, tools that create, update or delete data are refused.
-    /// </summary>
     public bool AllowDestructiveTools { get; set; } = true;
-
-    /// <summary>
-    /// Allows unauthenticated callers to run discovery methods (initialize, tools/list, ping).
-    /// Tool execution still requires a key. Defaults to true because Claude connectors probe
-    /// the endpoint before they have anywhere to put credentials, and answering those probes
-    /// with 401 makes the connector report a connection failure. Discovery exposes only the
-    /// tool catalogue — no Linnworks data — so this is the safe half to open.
-    /// </summary>
     public bool AllowAnonymousDiscovery { get; set; } = true;
-
-    /// <summary>
-    /// Whether an MCP client API key is mandatory. Leave true.
-    /// </summary>
-    /// <remarks>
-    /// Setting this false lets the server run with no key at all, which means anyone who can
-    /// reach the endpoint can invoke tools — and when server-side Linnworks credentials are
-    /// configured, that is anonymous access to a real Linnworks account, mutating tools
-    /// included. It exists as a deliberate, visible escape hatch (it warns loudly on every
-    /// startup) rather than something a deployment falls into by forgetting to set a key.
-    /// </remarks>
     public bool RequireApiKey { get; set; } = true;
-
-    /// <summary>
-    /// API keys allowed to call destructive tools, when destructive tools are enabled.
-    /// Empty means every authenticated client may.
-    /// </summary>
     public string[] DestructiveToolApiKeys { get; set; } = [];
 }
 
@@ -106,8 +72,7 @@ public sealed class ToolAuthorizer(
 
             throw new LinnworksApiException(
                 LinnworksErrorKind.Validation,
-                $"The tool '{toolName}' modifies Linnworks data and is disabled on this server. "
-                + "Ask an administrator to enable McpAuth:AllowDestructiveTools.",
+                $"The tool '{toolName}' modifies Linnworks data and is disabled on this server.",
                 $"Destructive tool '{toolName}' refused — AllowDestructiveTools is false.");
         }
 
@@ -137,7 +102,6 @@ public sealed class ToolAuthorizer(
     }
 }
 
-/// <summary>Authorizer used by the stdio transport.</summary>
 public sealed class StdioToolAuthorizer(IOptions<McpAuthOptions> options, ILogger<StdioToolAuthorizer> logger)
     : IToolAuthorizer
 {

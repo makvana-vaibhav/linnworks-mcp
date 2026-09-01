@@ -44,7 +44,7 @@ public class OrderToolsTests
                         Processed = false,
                         GeneralInfo = new OrderGeneralInfoResponse
                         {
-                            Status = "UNPAID",
+                            Status = 0,   // 0 = UNPAID, per the documented Linnworks enum
                             SubSource = "EBAY",
                             ReceivedDate = DateTimeOffset.UtcNow
                         },
@@ -70,11 +70,12 @@ public class OrderToolsTests
         var locationId = Guid.NewGuid().ToString();
 
         // Act
-        var resultJson = await tools.GetOpenOrdersAsync(locationId, 1, 10, 0, CancellationToken.None);
+        var resultJson = await tools.GetOpenOrdersAsync(locationId, 1, 10, CancellationToken.None);
 
         // Assert
         Assert.Contains("1001", resultJson);
         Assert.Contains("EBAY", resultJson);
+        Assert.Contains("UNPAID", resultJson);   // status code resolved to its name
         _authorizerMock.Verify(a => a.AuthorizeAsync("get_open_orders", false, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

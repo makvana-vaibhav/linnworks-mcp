@@ -6,9 +6,6 @@ using LinnworksMcp.Mcp;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ModelContextProtocol.AspNetCore;
 
-// Transport is chosen at startup: stdio for local tooling (MCP Inspector, a desktop client
-// launching this as a subprocess), Streamable HTTP for remote chatbots. The two cannot share a
-// process — stdio owns stdout as its JSON-RPC channel.
 var useStdio = args.Contains("--stdio", StringComparer.OrdinalIgnoreCase)
     || string.Equals(
         Environment.GetEnvironmentVariable("LINNWORKS_MCP_TRANSPORT"),
@@ -23,7 +20,6 @@ static async Task<int> RunStdioAsync(string[] args)
 {
     var builder = Host.CreateApplicationBuilder(args);
 
-    // Anything written to stdout corrupts the JSON-RPC stream, so logs go to stderr.
     builder.Logging.ClearProviders();
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
@@ -36,7 +32,6 @@ static async Task<int> RunStdioAsync(string[] args)
 
     builder.Services.AddLinnworks();
 
-    // No HTTP request means no credential headers: stdio is single-tenant, from configuration.
     builder.Services.AddSingleton<ILinnworksCredentialProvider, ConfiguredLinnworksCredentialProvider>();
     builder.Services.AddSingleton<IToolAuthorizer, StdioToolAuthorizer>();
 
@@ -60,7 +55,6 @@ static async Task<int> RunHttpAsync(string[] args)
     builder.Services.AddLinnworks();
     builder.Services.AddHttpContextAccessor();
 
-    // Credentials & Auth arrive per request and are enforced inside ToolAuthorizer and LinnworksCredentialProvider
     builder.Services.AddScoped<ILinnworksCredentialProvider, HeaderLinnworksCredentialProvider>();
     builder.Services.AddScoped<IToolAuthorizer, ToolAuthorizer>();
 
@@ -75,8 +69,6 @@ static async Task<int> RunHttpAsync(string[] args)
 
     var app = builder.Build();
 
-    // Say plainly, at startup, whether this endpoint is protected. A server that is open to
-    // the internet should never be a surprise discovered later.
     {
         var auth = app.Services
             .GetRequiredService<Microsoft.Extensions.Options.IOptions<McpAuthOptions>>().Value;
@@ -97,8 +89,7 @@ static async Task<int> RunHttpAsync(string[] args)
         else
         {
             startupLog.LogWarning(
-                "MCP endpoint is UNAUTHENTICATED (McpAuth__RequireApiKey=false). Anyone who can "
-                + "reach it can invoke tools against the configured Linnworks account.");
+                "MCP endpoint is UNAUTHENTICATED (McpAuth__RequireApiKey=false). Anyone who can reach it can invoke tools.");
         }
     }
 
@@ -109,21 +100,13 @@ static async Task<int> RunHttpAsync(string[] args)
     }
 
     app.UseMiddleware<CorrelationIdMiddleware>();
-
-    // Gate on /mcp. Kept as explicit middleware rather than RequireAuthorization: an
-    // authentication handler that suppresses its challenge turns that policy into a silent
-    // no-op, and this also closes the no-keys-configured case.
     app.UseMiddleware<McpAccessMiddleware>();
 
-    // Liveness check
     app.MapHealthChecks("/health", new() { Predicate = _ => false });
-
-    // Readiness check
     app.MapHealthChecks("/ready", new() { Predicate = check => check.Tags.Contains("ready") });
-
-    // Map MCP endpoint for Streamable HTTP discovery
     app.MapMcp("/mcp");
 
     await app.RunAsync().ConfigureAwait(false);
     return 0;
 }
+
