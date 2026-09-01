@@ -31,6 +31,8 @@ static async Task<int> RunStdioAsync(string[] args)
         builder.Configuration.GetSection(LinnworksOptions.SectionName));
     builder.Services.Configure<McpAuthOptions>(
         builder.Configuration.GetSection(McpAuthOptions.SectionName));
+    builder.Services.Configure<McpAuthOptions>(
+        builder.Configuration.GetSection("Mcp"));
 
     builder.Services.AddLinnworks();
 
@@ -52,6 +54,8 @@ static async Task<int> RunHttpAsync(string[] args)
         builder.Configuration.GetSection(LinnworksOptions.SectionName));
     builder.Services.Configure<McpAuthOptions>(
         builder.Configuration.GetSection(McpAuthOptions.SectionName));
+    builder.Services.Configure<McpAuthOptions>(
+        builder.Configuration.GetSection("Mcp"));
 
     builder.Services.AddLinnworks();
     builder.Services.AddHttpContextAccessor();
