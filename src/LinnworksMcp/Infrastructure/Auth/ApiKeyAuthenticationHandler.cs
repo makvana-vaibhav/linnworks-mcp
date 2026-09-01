@@ -38,8 +38,9 @@ public sealed class ApiKeyAuthenticationHandler(
         var presented = ExtractApiKey(Request);
         if (string.IsNullOrWhiteSpace(presented))
         {
-            return Task.FromResult(AuthenticateResult.Fail(
-                "Missing API key. Pass 'Authorization: Bearer <key>' or 'X-Api-Key: <key>'."));
+            // Return NoResult instead of Fail so anonymous discovery checks get 200 OK (not 401 challenge),
+            // while ToolAuthorizer enforces API key check on tool execution.
+            return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         if (!IsKnownKey(presented, validKeys))
