@@ -7,30 +7,33 @@ namespace LinnworksMcp.Application.Orders;
 /// <summary>Order reads.</summary>
 public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> logger)
 {
-    internal const string GetOpenOrdersPath = "/api/OpenOrders/GetOpenOrders";
+    internal const string GetOpenOrdersPath = "/api/Orders/GetOpenOrders";
     internal const string GetOrdersByIdPath = "/api/Orders/GetOrdersById";
 
     /// <summary>
-    /// Page-based open-order listing via <c>POST /api/OpenOrders/GetOpenOrders</c>.
+    /// Page-based open-order listing via <c>POST /api/Orders/GetOpenOrders</c>.
     /// </summary>
+    /// <param name="locationId">
+    /// Fulfilment centre to filter to, or <see langword="null"/> for every location.
+    /// </param>
     /// <remarks>
-    /// Note the namespace: this is <c>OpenOrders</c>, not <c>Orders</c>. Linnworks splits open
-    /// and processed orders across different namespaces. Unlike the inventory endpoints, this
-    /// one does return a real total, so paging metadata is exact rather than inferred.
+    /// Uses the Orders namespace rather than <c>OpenOrders/GetOpenOrders</c>, which requires a
+    /// <c>ViewId</c> matching a saved view that actually exists in the account and 400s otherwise.
+    /// This variant has no required fields, so it works on any account without setup.
+    /// The response carries a real <c>TotalEntries</c>, so paging metadata is exact rather than
+    /// inferred — which also makes "how many open orders are there?" answerable with pageSize 1.
     /// </remarks>
     public async Task<PagedResult<Order>> GetOpenOrdersAsync(
-        string locationId,
+        string? locationId,
         int pageNumber,
         int pageSize,
-        int viewId,
         CancellationToken cancellationToken)
     {
         var request = new GetOpenOrdersRequest
         {
-            ViewId = viewId,
-            LocationId = locationId,
             EntriesPerPage = pageSize,
-            PageNumber = pageNumber
+            PageNumber = pageNumber,
+            FulfilmentCenter = locationId
         };
 
         var response = await client
@@ -41,8 +44,8 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         var orders = (response.Data ?? []).Select(Project).ToList();
 
         logger.LogDebug(
-            "Retrieved {Count} open orders (page {PageNumber} of {TotalPages})",
-            orders.Count, response.PageNumber, response.TotalPages);
+            "Retrieved {Count} open orders (page {PageNumber} of {TotalPages}, {TotalEntries} total)",
+            orders.Count, response.PageNumber, response.TotalPages, response.TotalEntries);
 
         return PagedResult<Order>.Create(
             orders, pageNumber, pageSize, totalCount: response.TotalEntries);
@@ -75,15 +78,16 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
     /// so an aborted request does not pay for the second one.
     /// </remarks>
     public async Task<PagedResult<Order>> GetUnfulfilledOrdersAsync(
-        string locationId,
+        string? locationId,
         int pageNumber,
         int pageSize,
-        int viewId,
         CancellationToken cancellationToken)
     {
-        var page = await GetOpenOrdersAsync(locationId, pageNumber, pageSize, viewId, cancellationToken)
+        var page = await GetOpenOrdersAsync(locationId, pageNumber, pageSize, cancellationToken)
             .ConfigureAwait(false);
 
+        // The endpoint returns only open orders, so Processed is false throughout. The filter is
+        // kept as a guard in case a future Linnworks change starts including processed rows.
         var unprocessed = page.Items.Where(o => !o.Processed).ToList();
         if (unprocessed.Count == 0)
         {
@@ -110,10 +114,13 @@ public sealed class OrderService(ILinnworksClient client, ILogger<OrderService> 
         NumOrderId = o.NumOrderId,
         Processed = o.Processed,
         ProcessedDateTime = o.ProcessedDateTime,
-        FulfilmentLocationId = o.FulfilmentLocationId,
+        // Open orders carry the location on GeneralInfo; processed orders on the root.
+        FulfilmentLocationId = o.FulfilmentLocationId ?? o.GeneralInfo?.Location,
         Source = o.GeneralInfo?.Source,
         SubSource = o.GeneralInfo?.SubSource,
-        Status = o.GeneralInfo?.Status,
+        StatusCode = o.GeneralInfo?.Status,
+        Status = OrderStatusNames.Resolve(o.GeneralInfo?.Status),
+        NumItems = o.GeneralInfo?.NumItems ?? 0,
         ReceivedDate = o.GeneralInfo?.ReceivedDate,
         DespatchByDate = o.GeneralInfo?.DespatchByDate,
         PostalServiceName = o.ShippingInfo?.PostalServiceName,

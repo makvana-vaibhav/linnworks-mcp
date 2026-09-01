@@ -16,8 +16,15 @@ namespace LinnworksMcp.Utils;
 /// </summary>
 public static class ToolExecution
 {
+    /// <summary>
+    /// Shape of what tools return to MCP clients. camelCase because the server instructions and
+    /// tool descriptions refer to fields as pageNumber/pageSize/totalCount/hasMore, and the
+    /// payload has to match what callers are told to expect. Deliberately separate from the
+    /// Linnworks wire options in <c>LinnworksClient</c>, whose casing is dictated upstream.
+    /// </summary>
     internal static readonly JsonSerializerOptions ResponseOptions = new()
     {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false
     };
@@ -92,7 +99,6 @@ public static class ToolValidation
 {
     public const int MaxPageSize = 200;
     public const int DefaultPageSize = 50;
-    public const string DefaultAllLocationsGuid = "00000000-0000-0000-0000-000000000000";
 
     public static (int PageNumber, int PageSize) Paging(int pageNumber, int pageSize)
     {
@@ -136,47 +142,44 @@ public static class ToolValidation
         string.IsNullOrWhiteSpace(value) ? null : RequiredGuid(parameterName, value);
 
     /// <summary>
-    /// Smart location resolver: Accepts GUIDs, 'all', 'default', location names, or null/empty.
-    /// Maps to exact UUID expected by Linnworks endpoints.
+    /// Resolves a caller-supplied location — a UUID, a location name, "all", or nothing — to a
+    /// location UUID, or <see langword="null"/> meaning every location.
     /// </summary>
-    public static async Task<string> ResolveLocationGuidAsync(
+    /// <remarks>
+    /// Null rather than an all-zero UUID: Linnworks has no zero-GUID "all locations" sentinel,
+    /// and endpoints reject one as an unknown location. Callers must omit the field instead.
+    /// An unrecognised name also resolves to null (all locations) rather than failing, since
+    /// returning every order is more useful than an error when a name is merely misspelled.
+    /// </remarks>
+    public static async Task<string?> ResolveLocationGuidAsync(
         string? locationIdOrName,
         LocationService locationService,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(locationIdOrName) ||
-            string.Equals(locationIdOrName, "all", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(locationIdOrName, "all locations", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(locationIdOrName, "default", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(locationIdOrName, DefaultAllLocationsGuid, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(locationIdOrName)
+            || string.Equals(locationIdOrName, "all", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(locationIdOrName, "all locations", StringComparison.OrdinalIgnoreCase))
         {
-            return DefaultAllLocationsGuid;
+            return null;
         }
 
         if (Guid.TryParse(locationIdOrName, out var parsedGuid))
         {
-            return parsedGuid.ToString();
+            // Callers sometimes pass an all-zero UUID meaning "all"; treat it as such.
+            return parsedGuid == Guid.Empty ? null : parsedGuid.ToString();
         }
 
-        // Try matching by location name
-        try
-        {
-            var locationsPage = await locationService.GetLocationsAsync(1, 200, ct).ConfigureAwait(false);
-            var matched = locationsPage.Items.FirstOrDefault(l =>
-                string.Equals(l.LocationName, locationIdOrName, StringComparison.OrdinalIgnoreCase) ||
-                (l.LocationName?.Contains(locationIdOrName, StringComparison.OrdinalIgnoreCase) ?? false));
+        var locations = await locationService.GetLocationsAsync(1, MaxPageSize, ct).ConfigureAwait(false);
 
-            if (matched != null)
-            {
-                return matched.StockLocationId;
-            }
-        }
-        catch
-        {
-            // Ignore lookup failure and fall back to default
-        }
+        // Prefer an exact name match before falling back to a substring match, so "Main" cannot
+        // be captured by "Main Overflow" when a location called exactly "Main" exists.
+        var matched =
+            locations.Items.FirstOrDefault(l =>
+                string.Equals(l.LocationName, locationIdOrName, StringComparison.OrdinalIgnoreCase))
+            ?? locations.Items.FirstOrDefault(l =>
+                l.LocationName.Contains(locationIdOrName, StringComparison.OrdinalIgnoreCase));
 
-        return DefaultAllLocationsGuid;
+        return matched?.StockLocationId;
     }
 
     public static string RequiredText(string parameterName, string? value) =>

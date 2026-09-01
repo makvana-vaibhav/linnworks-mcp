@@ -151,11 +151,12 @@ public sealed class InventoryService(ILinnworksClient client, ILogger<InventoryS
             Available = levels?.Sum(l => l.Available) ?? 0,
             InOrderBook = levels?.Sum(l => l.InOrderBook) ?? 0,
             Due = levels?.Sum(l => l.Due) ?? 0,
-            MinimumLevel = item.MinimumLevel,
+            // Minimum level is defined per location; surface the highest so a rollup never
+            // looks safe when one location is under its own threshold.
+            MinimumLevel = levels is { Count: > 0 } ? levels.Max(l => l.MinimumLevel) : 0,
             RetailPrice = item.RetailPrice,
             PurchasePrice = item.PurchasePrice,
-            Weight = item.Weight,
-            IsArchived = item.IsArchived
+            Weight = item.Weight
         };
     }
 }

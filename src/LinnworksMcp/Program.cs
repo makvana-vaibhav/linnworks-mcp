@@ -83,6 +83,11 @@ static async Task<int> RunHttpAsync(string[] args)
 
     app.UseMiddleware<CorrelationIdMiddleware>();
 
+    // Gate on /mcp. Kept as explicit middleware rather than RequireAuthorization: an
+    // authentication handler that suppresses its challenge turns that policy into a silent
+    // no-op, and this also closes the no-keys-configured case.
+    app.UseMiddleware<McpAccessMiddleware>();
+
     // Liveness check
     app.MapHealthChecks("/health", new() { Predicate = _ => false });
 

@@ -9,6 +9,13 @@ namespace LinnworksMcp.Application.Returns;
 /// </summary>
 public sealed class ReturnService(ILinnworksClient client)
 {
+    // VERIFIED endpoint paths (the ones previously coded here do not exist and return 404).
+    // The namespace is ReturnsRefunds, not Returns:
+    //   actionable list  -> POST /api/ReturnsRefunds/GetActionableRefundHeaders
+    //   create refund    -> POST /api/ReturnsRefunds/CreateRefund     (destructive)
+    //   action a refund  -> POST /api/ReturnsRefunds/ActionRefund     (destructive)
+    // Verify each request/response schema before re-registering ReturnTools in McpServerSetup.
+
     internal const string SearchReturnsPath = "/api/Returns/SearchReturns";
     internal const string CreateReturnPath = "/api/Returns/CreateReturn";
 

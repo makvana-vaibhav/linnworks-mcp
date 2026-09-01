@@ -27,7 +27,10 @@ public interface ILinnworksAuthManager
 /// </remarks>
 public sealed class LinnworksAuthManager : ILinnworksAuthManager
 {
-    private readonly HttpClient _httpClient;
+    /// <summary>Named <see cref="HttpClient"/> carrying the timeout and retry pipeline.</summary>
+    public const string AuthHttpClientName = "linnworks-auth";
+
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly LinnworksOptions _options;
     private readonly ILogger<LinnworksAuthManager> _logger;
     private readonly TimeProvider _timeProvider;
@@ -41,12 +44,14 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
     };
 
     public LinnworksAuthManager(
-        HttpClient httpClient,
+        IHttpClientFactory httpClientFactory,
         IOptions<LinnworksOptions> options,
         ILogger<LinnworksAuthManager> logger,
         TimeProvider? timeProvider = null)
     {
-        _httpClient = httpClient;
+        // A factory rather than an injected HttpClient: this type must be a singleton for the
+        // session cache to be shared, and AddHttpClient's typed-client registration is transient.
+        _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -135,10 +140,12 @@ public sealed class LinnworksAuthManager : ILinnworksAuthManager
             credentials.ApplicationSecret,
             credentials.Token);
 
+        var httpClient = _httpClientFactory.CreateClient(AuthHttpClientName);
+
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient
+            response = await httpClient
                 .PostAsJsonAsync(_options.AuthUrl, body, SerializerOptions, cancellationToken)
                 .ConfigureAwait(false);
         }

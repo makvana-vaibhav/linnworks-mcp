@@ -40,8 +40,6 @@ public sealed class InventoryItem
     public decimal PurchasePrice { get; init; }
 
     public double Weight { get; init; }
-
-    public bool IsArchived { get; init; }
 }
 
 /// <summary>Full detail projection, from <c>GET /api/Inventory/GetInventoryItemById</c>.</summary>
@@ -143,10 +141,8 @@ internal sealed class StockItemFullResponse
 
     public double Weight { get; init; }
 
-    public int MinimumLevel { get; init; }
-
-    public bool IsArchived { get; init; }
-
+    // StockItemFull carries no MinimumLevel or IsArchived of its own — MinimumLevel is per
+    // location on StockLevels, and archived state is not returned by this endpoint at all.
     public List<StockItemLevelResponse>? StockLevels { get; init; }
 }
 

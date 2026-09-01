@@ -9,6 +9,14 @@ namespace LinnworksMcp.Application.Listings;
 /// </summary>
 public sealed class ListingService(ILinnworksClient client)
 {
+    // None of the previously coded /api/Listings/* endpoints exist — there is no Listings
+    // namespace in the Linnworks API. Channel listing data is reached through the Inventory
+    // channel-SKU endpoints instead, e.g.:
+    //   POST /api/Inventory/GetInventoryItemChannelSKUs
+    //   POST /api/Inventory/BatchGetInventoryItemChannelSKUs
+    //   POST /api/Inventory/GetInventoryItemPrices
+    // Redesign the module around those before re-registering ListingTools in McpServerSetup.
+
     internal const string GetListingsPath = "/api/Listings/GetListingsBySKU";
     internal const string GetItemListingsPath = "/api/Listings/GetInventoryItemListings";
     internal const string GetListingErrorsPath = "/api/Listings/GetListingErrors";

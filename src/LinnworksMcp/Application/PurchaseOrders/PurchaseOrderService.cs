@@ -9,6 +9,15 @@ namespace LinnworksMcp.Application.PurchaseOrders;
 /// </summary>
 public sealed class PurchaseOrderService(ILinnworksClient client)
 {
+    // VERIFIED endpoint paths (the ones previously coded here do not exist and return 404):
+    //   list one PO      -> POST /api/PurchaseOrder/Get_PurchaseOrder
+    //   list many POs    -> POST /api/PurchaseOrder/GetPurchaseOrdersWithStockItems
+    //   create           -> POST /api/PurchaseOrder/Create_PurchaseOrder_Initial   (destructive)
+    //   change status    -> POST /api/PurchaseOrder/Change_PurchaseOrderStatus     (destructive)
+    //   add item         -> POST /api/PurchaseOrder/Add_PurchaseOrderItem          (destructive)
+    // Note the underscores in the real method names. Verify each request/response schema before
+    // re-registering PurchaseOrderTools in McpServerSetup.
+
     internal const string GetPurchaseOrdersPath = "/api/PurchaseOrder/GetPurchaseOrders";
     internal const string CreatePurchaseOrderPath = "/api/PurchaseOrder/CreatePurchaseOrder";
 

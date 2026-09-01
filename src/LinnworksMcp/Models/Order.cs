@@ -16,7 +16,16 @@ public sealed class Order
 
     public string? SubSource { get; init; }
 
+    /// <summary>Raw Linnworks order status code.</summary>
+    public int? StatusCode { get; init; }
+
+    /// <summary>
+    /// Human-readable form of <see cref="StatusCode"/>, or null when Linnworks returns a code
+    /// this server does not recognise.
+    /// </summary>
     public string? Status { get; init; }
+
+    public int NumItems { get; init; }
 
     public DateTimeOffset? ReceivedDate { get; init; }
 
@@ -54,27 +63,42 @@ public sealed class OrderItem
 
 // ── Wire contracts ───────────────────────────────────────────────────────────
 
-/// <summary>Request for <c>POST /api/OpenOrders/GetOpenOrders</c>.</summary>
+/// <summary>
+/// Request for <c>POST /api/Orders/GetOpenOrders</c>.
+/// </summary>
+/// <remarks>
+/// This is the Orders-namespace variant, not <c>OpenOrders/GetOpenOrders</c>. The latter
+/// requires a <c>ViewId</c> naming a real saved view in the account and rejects the request with
+/// 400 when given one that does not exist — there is no "0 means default" fallback. This variant
+/// declares no required fields at all, so it works without any account-specific setup, and it
+/// carries a higher rate limit (250/min vs 150/min). Field names here are camelCase; the
+/// OpenOrders variant used PascalCase.
+/// </remarks>
 internal sealed class GetOpenOrdersRequest
 {
-    /// <summary>Linnworks saved-view id. 0 selects the account's default view.</summary>
-    [JsonPropertyName("ViewId")]
-    public required int ViewId { get; init; }
-
-    [JsonPropertyName("LocationId")]
-    public required string LocationId { get; init; }
-
-    [JsonPropertyName("EntriesPerPage")]
+    [JsonPropertyName("entriesPerPage")]
     public required int EntriesPerPage { get; init; }
 
-    [JsonPropertyName("PageNumber")]
+    [JsonPropertyName("pageNumber")]
     public required int PageNumber { get; init; }
 
-    [JsonPropertyName("OrderIds")]
-    public string[]? OrderIds { get; init; }
+    /// <summary>
+    /// Location to get orders for. Null is sent as an omitted field and means every location —
+    /// passing an all-zero UUID instead is rejected as an unknown location.
+    /// </summary>
+    [JsonPropertyName("fulfilmentCenter")]
+    public string? FulfilmentCenter { get; init; }
+
+    /// <summary>Optional extra filter expression, passed through untouched when supplied.</summary>
+    [JsonPropertyName("additionalFilter")]
+    public string? AdditionalFilter { get; init; }
 }
 
-/// <summary>Linnworks' own paged envelope, normalised into <see cref="PagedResult{T}"/>.</summary>
+/// <summary>
+/// Linnworks' own paged envelope, normalised into <see cref="PagedResult{T}"/>. Both
+/// <c>GenericPagedResult_OpenOrder</c> and <c>PostFilterPagedResponse_OpenOrder</c> use
+/// these field names, so one type covers both.
+/// </summary>
 internal sealed class PostFilterPagedResponse<T>
 {
     public int PageNumber { get; init; }
@@ -125,11 +149,36 @@ internal sealed class OrderGeneralInfoResponse
 
     public string? SubSource { get; init; }
 
-    public string? Status { get; init; }
+    /// <summary>
+    /// Order status as an integer, per the documented enum
+    /// (0 = UNPAID, 1 = PAID, 2 = RETURN, 3 = PENDING, 4 = RESEND).
+    /// Typing this as a string makes every real response fail to deserialize.
+    /// </summary>
+    public int? Status { get; init; }
+
+    /// <summary>Fulfilment location. On open orders this is the only place the location appears.</summary>
+    public string? Location { get; init; }
+
+    public int NumItems { get; init; }
 
     public DateTimeOffset? ReceivedDate { get; init; }
 
     public DateTimeOffset? DespatchByDate { get; init; }
+}
+
+/// <summary>Documented Linnworks order-status codes.</summary>
+internal static class OrderStatusNames
+{
+    public static string? Resolve(int? status) => status switch
+    {
+        0 => "UNPAID",
+        1 => "PAID",
+        2 => "RETURN",
+        3 => "PENDING",
+        4 => "RESEND",
+        // An unrecognised code is left unnamed rather than guessed at; StatusCode still carries it.
+        _ => null
+    };
 }
 
 internal sealed class OrderShippingInfoResponse

@@ -31,10 +31,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<EndpointRateLimiter>();
         services.AddSingleton(TimeProvider.System);
 
-        // The authorize call must not carry the retry pipeline's auth-aware handling; bad
-        // credentials should fail fast rather than be retried three times.
-        services.AddHttpClient<ILinnworksAuthManager, LinnworksAuthManager>(LinnworksAuthHttpClient, ConfigureTimeout)
+        // The auth manager MUST be a singleton — its session cache is the whole point, and a
+        // per-instance cache would re-authenticate on every tool call. That rules out
+        // AddHttpClient<TInterface,TImpl>, whose typed-client registration is transient, so the
+        // HttpClient is registered by name and resolved through IHttpClientFactory instead.
+        services.AddHttpClient(LinnworksAuthHttpClient, ConfigureTimeout)
             .AddResilienceHandler("linnworks-auth", BuildTransientPipeline);
+
+        services.AddSingleton<ILinnworksAuthManager, LinnworksAuthManager>();
 
         services.AddHttpClient<ILinnworksClient, LinnworksClient>(LinnworksHttpClient, ConfigureTimeout)
             .AddResilienceHandler("linnworks-api", BuildTransientPipeline);

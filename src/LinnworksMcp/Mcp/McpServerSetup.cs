@@ -28,7 +28,7 @@ public static class McpServerSetup
 
                 options.ServerInstructions =
                     "Tools for querying and managing a Linnworks account: inventory, stock "
-                    + "levels, orders, warehouse locations, listings, customers, shipping, purchase orders and returns.\n\n"
+                    + "levels, orders and warehouse locations.\n\n"
                     + "Most tools take a warehouse location UUID — call get_locations first to "
                     + "translate a location name into its id. Likewise, call get_inventory_items "
                     + "to resolve a SKU into a StockItemId before using item-level tools.\n\n"
@@ -41,11 +41,14 @@ public static class McpServerSetup
             .WithTools<InventoryTools>()
             .WithTools<StockTools>()
             .WithTools<OrderTools>()
-            .WithTools<LocationTools>()
-            .WithTools<ListingTools>()
-            .WithTools<CustomerTools>()
-            .WithTools<ShippingTools>()
-            .WithTools<PurchaseOrderTools>()
-            .WithTools<ReturnTools>();
+            .WithTools<LocationTools>();
+
+        // ListingTools, CustomerTools, ShippingTools, PurchaseOrderTools and ReturnTools are
+        // deliberately NOT registered. Every endpoint they call was written from a guessed method
+        // name and returns 404 — Linnworks' real names differ (see the verified paths in each
+        // service's TODO block). An agent that cannot see a tool says "I can't do that"; one that
+        // sees a broken tool burns turns on it and blames the caller's configuration. Re-register
+        // each type here once its request and response schemas have been verified against
+        // https://apidocs.linnworks.net/reference/<slug>.md.
     }
 }

@@ -9,6 +9,13 @@ namespace LinnworksMcp.Application.Customers;
 /// </summary>
 public sealed class CustomerService(ILinnworksClient client)
 {
+    // Linnworks has NO general customer search or get-customer-by-id API. The only related
+    // endpoints are order-scoped:
+    //   POST /api/Orders/CustomerLookUp        (look up a customer in the context of orders)
+    //   POST /api/Orders/SetOrderCustomerInfo  (destructive)
+    // search_customers / get_customer_by_id as previously written cannot be implemented against
+    // this API. Reshape these tools around CustomerLookUp, or drop the module.
+
     internal const string SearchCustomersPath = "/api/Customers/SearchCustomers";
     internal const string GetCustomerByIdPath = "/api/Customers/GetCustomerById";
 

@@ -43,6 +43,14 @@ public sealed class McpAuthOptions
     public bool AllowDestructiveTools { get; set; } = true;
 
     /// <summary>
+    /// Allows unauthenticated callers to run discovery methods (initialize, tools/list, ping)
+    /// so a client's capability probe succeeds without a key. Tool execution still requires one.
+    /// Defaults to false: opening discovery leaks the tool catalogue, so it should be a
+    /// deliberate choice rather than something a probe failure pressures you into.
+    /// </summary>
+    public bool AllowAnonymousDiscovery { get; set; }
+
+    /// <summary>
     /// API keys allowed to call destructive tools, when destructive tools are enabled.
     /// Empty means every authenticated client may.
     /// </summary>

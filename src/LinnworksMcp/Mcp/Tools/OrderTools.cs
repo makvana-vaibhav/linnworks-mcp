@@ -20,19 +20,18 @@ public sealed class OrderTools(
 {
     [McpServerTool(Name = "get_open_orders", ReadOnly = true, Idempotent = true)]
     [Description(
-        "List open (not yet processed) Linnworks orders for a warehouse location or all locations. "
-        + "Returns order number, channel, status, customer, total and shipping service. Read-only. "
-        + "Results are page-based: pass pageNumber (1-based) and pageSize (max 200). "
-        + "Pass locationId as location UUID, location name (e.g. 'Default', 'Main'), or 'all'.")]
+        "List open (not yet processed) Linnworks orders. Returns order number, channel, status, "
+        + "customer, total and shipping service, plus a totalCount of all matching orders. "
+        + "Read-only. To count open orders without fetching them, call with pageSize 1 and read "
+        + "totalCount. Page-based: pass pageNumber (1-based) and pageSize (max 200). "
+        + "locationId accepts a location UUID or name; omit it to cover every location.")]
     public Task<string> GetOpenOrdersAsync(
-        [Description("Warehouse location UUID or location name (e.g. 'Default', 'Main', or 'all' for all locations).")]
-        string locationId = "all",
+        [Description("Optional warehouse location UUID or name. Omit to include every location.")]
+        string? locationId = null,
         [Description("Page number, 1-based. Defaults to 1.")]
         int pageNumber = 1,
         [Description("Orders per page. Defaults to 50, maximum 200.")]
         int pageSize = ToolValidation.DefaultPageSize,
-        [Description("Optional Linnworks saved-view id. Defaults to 0, the account's default view.")]
-        int viewId = 0,
         CancellationToken cancellationToken = default) =>
         ToolExecution.RunAsync("get_open_orders", logger, metrics, async ct =>
         {
@@ -44,7 +43,7 @@ public sealed class OrderTools(
                 .ConfigureAwait(false);
 
             return await orderService
-                .GetOpenOrdersAsync(location, page, size, viewId, ct)
+                .GetOpenOrdersAsync(location, page, size, ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
 
@@ -87,16 +86,15 @@ public sealed class OrderTools(
         "List open orders that still need to be shipped, enriched with their line items and "
         + "shipping details. Read-only. Answers 'what still needs fulfilling' in one call by "
         + "combining the open-order list with full order detail. Page-based: pass pageNumber "
-        + "(1-based) and pageSize (max 200). Pass locationId as location UUID, name, or 'all'.")]
+        + "(1-based) and pageSize (max 200). locationId accepts a location UUID or name; "
+        + "omit it to cover every location.")]
     public Task<string> GetUnfulfilledOrdersAsync(
-        [Description("Warehouse location UUID or location name (e.g. 'Default', 'Main', or 'all' for all locations).")]
-        string locationId = "all",
+        [Description("Optional warehouse location UUID or name. Omit to include every location.")]
+        string? locationId = null,
         [Description("Page number, 1-based. Defaults to 1.")]
         int pageNumber = 1,
         [Description("Orders per page. Defaults to 50, maximum 200.")]
         int pageSize = ToolValidation.DefaultPageSize,
-        [Description("Optional Linnworks saved-view id. Defaults to 0, the account's default view.")]
-        int viewId = 0,
         CancellationToken cancellationToken = default) =>
         ToolExecution.RunAsync("get_unfulfilled_orders", logger, metrics, async ct =>
         {
@@ -108,7 +106,7 @@ public sealed class OrderTools(
                 .ConfigureAwait(false);
 
             return await orderService
-                .GetUnfulfilledOrdersAsync(location, page, size, viewId, ct)
+                .GetUnfulfilledOrdersAsync(location, page, size, ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
 }

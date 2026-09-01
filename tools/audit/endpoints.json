@@ -1,0 +1,10 @@
+{
+ "/api/Stock/GetStockItemsFull": "getstockitemsfull",
+ "/api/Inventory/GetInventoryItemById": "getinventoryitembyid",
+ "/api/Dashboards/GetLowStockLevel": "getlowstocklevel",
+ "/api/Stock/GetStockLevel_Batch": "getstocklevel_batch",
+ "/api/Stock/SetStockLevel": "setstocklevel",
+ "/api/Orders/GetOpenOrders": "getopenorders-1",
+ "/api/Orders/GetOrdersById": "getordersbyid",
+ "/api/Inventory/GetStockLocations": "getstocklocations"
+}

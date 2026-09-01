@@ -8,6 +8,14 @@ namespace LinnworksMcp.Application.Shipping;
 /// </summary>
 public sealed class ShippingService(ILinnworksClient client)
 {
+    // VERIFIED endpoint paths (the ones previously coded here do not exist and return 404):
+    //   postal services  -> GET  /api/Inventory/GetPostalServices   (Inventory, not PostalServices)
+    //   shipping methods -> POST /api/Orders/GetShippingMethods
+    //   shipping quote   -> POST /api/Orders/GetShippingQuote
+    // There is no /api/Orders/GetOrderShippingInfo; per-order shipping detail comes back on
+    // ShippingInfo from Orders/GetOrdersById, which get_order_by_id already returns.
+    // Verify each schema before re-registering ShippingTools in McpServerSetup.
+
     internal const string GetPostalServicesPath = "/api/PostalServices/GetPostalServices";
     internal const string GetOrderShippingInfoPath = "/api/Orders/GetOrderShippingInfo";
 
