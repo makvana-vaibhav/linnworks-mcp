@@ -30,16 +30,13 @@ public sealed class ApiKeyAuthenticationHandler(
 
         if (validKeys.Count == 0)
         {
-            // Fail closed: If no key is configured, refuse all incoming connections.
-            return Task.FromResult(AuthenticateResult.Fail(
-                "No MCP client API keys are configured on the server; refusing all connection requests."));
+            return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         var presented = ExtractApiKey(Request);
         if (string.IsNullOrWhiteSpace(presented))
         {
-            // Return NoResult instead of Fail so anonymous discovery checks get 200 OK (not 401 challenge),
-            // while ToolAuthorizer enforces API key check on tool execution.
+            // Return NoResult so discovery checks get 200 OK without 401 challenge.
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
@@ -53,6 +50,12 @@ public sealed class ApiKeyAuthenticationHandler(
 
         return Task.FromResult(AuthenticateResult.Success(
             new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
+    }
+
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        // Do not force 401 challenge on discovery probes; ToolAuthorizer handles tool execution security.
+        return Task.CompletedTask;
     }
 
     /// <summary>
