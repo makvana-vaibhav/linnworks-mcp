@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using LinnworksMcp.Application.Locations;
 using LinnworksMcp.Application.Orders;
 using LinnworksMcp.Infrastructure.Auth;
 using LinnworksMcp.Infrastructure.Observability;
@@ -12,19 +13,20 @@ namespace LinnworksMcp.Mcp.Tools;
 [McpServerToolType]
 public sealed class OrderTools(
     OrderService orderService,
+    LocationService locationService,
     IToolAuthorizer authorizer,
     ToolMetrics metrics,
     ILogger<OrderTools> logger)
 {
     [McpServerTool(Name = "get_open_orders", ReadOnly = true, Idempotent = true)]
     [Description(
-        "List open (not yet processed) Linnworks orders for a warehouse location. Returns order "
-        + "number, channel, status, customer, total and shipping service. Read-only. "
+        "List open (not yet processed) Linnworks orders for a warehouse location or all locations. "
+        + "Returns order number, channel, status, customer, total and shipping service. Read-only. "
         + "Results are page-based: pass pageNumber (1-based) and pageSize (max 200). "
-        + "Use get_locations to find the location UUID.")]
+        + "Pass locationId as location UUID, location name (e.g. 'Default', 'Main'), or 'all'.")]
     public Task<string> GetOpenOrdersAsync(
-        [Description("Warehouse location UUID to list orders for. Use get_locations to look this up.")]
-        string locationId,
+        [Description("Warehouse location UUID or location name (e.g. 'Default', 'Main', or 'all' for all locations).")]
+        string locationId = "all",
         [Description("Page number, 1-based. Defaults to 1.")]
         int pageNumber = 1,
         [Description("Orders per page. Defaults to 50, maximum 200.")]
@@ -35,7 +37,8 @@ public sealed class OrderTools(
         ToolExecution.RunAsync("get_open_orders", logger, metrics, async ct =>
         {
             var (page, size) = ToolValidation.Paging(pageNumber, pageSize);
-            var location = ToolValidation.RequiredGuid(nameof(locationId), locationId);
+            var location = await ToolValidation.ResolveLocationGuidAsync(locationId, locationService, ct)
+                .ConfigureAwait(false);
 
             await authorizer.AuthorizeAsync("get_open_orders", destructive: false, ct)
                 .ConfigureAwait(false);
@@ -84,10 +87,10 @@ public sealed class OrderTools(
         "List open orders that still need to be shipped, enriched with their line items and "
         + "shipping details. Read-only. Answers 'what still needs fulfilling' in one call by "
         + "combining the open-order list with full order detail. Page-based: pass pageNumber "
-        + "(1-based) and pageSize (max 200).")]
+        + "(1-based) and pageSize (max 200). Pass locationId as location UUID, name, or 'all'.")]
     public Task<string> GetUnfulfilledOrdersAsync(
-        [Description("Warehouse location UUID. Use get_locations to look this up.")]
-        string locationId,
+        [Description("Warehouse location UUID or location name (e.g. 'Default', 'Main', or 'all' for all locations).")]
+        string locationId = "all",
         [Description("Page number, 1-based. Defaults to 1.")]
         int pageNumber = 1,
         [Description("Orders per page. Defaults to 50, maximum 200.")]
@@ -98,7 +101,8 @@ public sealed class OrderTools(
         ToolExecution.RunAsync("get_unfulfilled_orders", logger, metrics, async ct =>
         {
             var (page, size) = ToolValidation.Paging(pageNumber, pageSize);
-            var location = ToolValidation.RequiredGuid(nameof(locationId), locationId);
+            var location = await ToolValidation.ResolveLocationGuidAsync(locationId, locationService, ct)
+                .ConfigureAwait(false);
 
             await authorizer.AuthorizeAsync("get_unfulfilled_orders", destructive: false, ct)
                 .ConfigureAwait(false);
@@ -107,10 +111,4 @@ public sealed class OrderTools(
                 .GetUnfulfilledOrdersAsync(location, page, size, viewId, ct)
                 .ConfigureAwait(false);
         }, cancellationToken);
-
-    // TODO: get_processed_orders     -> POST /api/ProcessedOrders/SearchProcessedOrders
-    // TODO: search_orders            -> POST /api/ProcessedOrders/SearchProcessedOrdersPaged
-    // TODO: add_order_note           -> POST /api/Orders/AddOrderNote  (destructive)
-    // TODO: get_order_shipping_info  -> POST /api/Orders/GetOrderShippingInfo
-    // Verify each schema at https://apidocs.linnworks.net/reference/<slug>.md before implementing.
 }

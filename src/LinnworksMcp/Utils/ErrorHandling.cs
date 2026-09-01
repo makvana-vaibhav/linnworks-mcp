@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LinnworksMcp.Application.Locations;
 using LinnworksMcp.Infrastructure.Linnworks;
 using LinnworksMcp.Infrastructure.Observability;
 using Microsoft.Extensions.Logging;
@@ -52,7 +53,6 @@ public static class ToolExecution
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // The client went away or aborted the call; nothing to report back to it.
             stopwatch.Stop();
             metrics.RecordToolCall(toolName, stopwatch.Elapsed, success: false);
             logger.LogInformation("Tool {Tool} was cancelled by the caller", toolName);
@@ -63,7 +63,6 @@ public static class ToolExecution
             stopwatch.Stop();
             metrics.RecordToolCall(toolName, stopwatch.Elapsed, success: false);
 
-            // Full detail — including the upstream body — stays in the log.
             logger.LogError(
                 ex,
                 "Tool {Tool} failed after {DurationMs}ms with {Kind}",
@@ -71,7 +70,6 @@ public static class ToolExecution
                 stopwatch.ElapsedMilliseconds,
                 ex.Kind);
 
-            // Only the sanitized message crosses the boundary.
             throw new McpException($"{ex.SafeMessage} (correlation id: {CorrelationId.Value})");
         }
         catch (Exception ex)
@@ -83,23 +81,19 @@ public static class ToolExecution
                 ex, "Tool {Tool} failed unexpectedly after {DurationMs}ms",
                 toolName, stopwatch.ElapsedMilliseconds);
 
-            // Never surface the exception text — it can carry paths, config or payload fragments.
             throw new McpException(
                 $"The tool failed unexpectedly. (correlation id: {CorrelationId.Value})");
         }
     }
 }
 
-/// <summary>Parameter validation that runs before any Linnworks call is made.</summary>
+/// <summary>Parameter validation and smart resolution that runs before any Linnworks call is made.</summary>
 public static class ToolValidation
 {
     public const int MaxPageSize = 200;
     public const int DefaultPageSize = 50;
+    public const string DefaultAllLocationsGuid = "00000000-0000-0000-0000-000000000000";
 
-    /// <summary>
-    /// Validates paging inputs. Rejects rather than silently clamps, so a caller asking for 500
-    /// records learns the cap exists instead of quietly receiving 200.
-    /// </summary>
     public static (int PageNumber, int PageSize) Paging(int pageNumber, int pageSize)
     {
         if (pageNumber <= 0)
@@ -140,6 +134,50 @@ public static class ToolValidation
 
     public static string? OptionalGuid(string parameterName, string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : RequiredGuid(parameterName, value);
+
+    /// <summary>
+    /// Smart location resolver: Accepts GUIDs, 'all', 'default', location names, or null/empty.
+    /// Maps to exact UUID expected by Linnworks endpoints.
+    /// </summary>
+    public static async Task<string> ResolveLocationGuidAsync(
+        string? locationIdOrName,
+        LocationService locationService,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(locationIdOrName) ||
+            string.Equals(locationIdOrName, "all", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(locationIdOrName, "all locations", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(locationIdOrName, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(locationIdOrName, DefaultAllLocationsGuid, StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultAllLocationsGuid;
+        }
+
+        if (Guid.TryParse(locationIdOrName, out var parsedGuid))
+        {
+            return parsedGuid.ToString();
+        }
+
+        // Try matching by location name
+        try
+        {
+            var locationsPage = await locationService.GetLocationsAsync(1, 200, ct).ConfigureAwait(false);
+            var matched = locationsPage.Items.FirstOrDefault(l =>
+                string.Equals(l.LocationName, locationIdOrName, StringComparison.OrdinalIgnoreCase) ||
+                (l.LocationName?.Contains(locationIdOrName, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            if (matched != null)
+            {
+                return matched.StockLocationId;
+            }
+        }
+        catch
+        {
+            // Ignore lookup failure and fall back to default
+        }
+
+        return DefaultAllLocationsGuid;
+    }
 
     public static string RequiredText(string parameterName, string? value) =>
         string.IsNullOrWhiteSpace(value)

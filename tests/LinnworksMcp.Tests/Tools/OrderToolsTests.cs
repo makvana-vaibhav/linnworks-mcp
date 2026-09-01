@@ -1,3 +1,4 @@
+using LinnworksMcp.Application.Locations;
 using LinnworksMcp.Application.Orders;
 using LinnworksMcp.Infrastructure.Auth;
 using LinnworksMcp.Infrastructure.Linnworks;
@@ -57,8 +58,11 @@ public class OrderToolsTests
             });
 
         var orderService = new OrderService(_clientMock.Object, NullLogger<OrderService>.Instance);
+        var locationService = new LocationService(_clientMock.Object);
+
         var tools = new OrderTools(
             orderService,
+            locationService,
             _authorizerMock.Object,
             _metrics,
             NullLogger<OrderTools>.Instance);
