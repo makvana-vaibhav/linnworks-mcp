@@ -58,6 +58,22 @@ public sealed class ToolAuthorizer(
 
     public Task AuthorizeAsync(string toolName, bool destructive, CancellationToken cancellationToken)
     {
+        var validKeys = _options.GetAllValidKeys();
+        if (validKeys.Count > 0)
+        {
+            var context = httpContextAccessor.HttpContext;
+            var presentedKey = context != null ? ApiKeyAuthenticationHandler.ExtractApiKey(context.Request) : null;
+
+            if (string.IsNullOrWhiteSpace(presentedKey) || !validKeys.Any(k => string.Equals(k, presentedKey, StringComparison.Ordinal)))
+            {
+                logger.LogWarning("Refused tool {Tool}: invalid or missing MCP client API key", toolName);
+                throw new LinnworksApiException(
+                    LinnworksErrorKind.Authentication,
+                    "Invalid or missing MCP client API key. Pass 'X-Api-Key' or 'Authorization: Bearer <key>'.",
+                    "Tool execution refused — presented API key did not match McpAuth:ApiKey.");
+            }
+        }
+
         if (!destructive)
         {
             return Task.CompletedTask;

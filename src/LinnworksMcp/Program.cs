@@ -79,11 +79,6 @@ static async Task<int> RunHttpAsync(string[] args)
 
     builder.Services.AddLinnworksMcpServer().WithHttpTransport(options =>
     {
-        // Stateless is the SDK default as of the 2026-07-28 revision (SEP-2567), which removed
-        // Mcp-Session-Id. Stated explicitly because the whole credential design depends on it:
-        // with no session to hold per-tenant state, credentials travel per request, and each
-        // request's handler runs on that request's own execution context — which is what lets
-        // HeaderLinnworksCredentialProvider read them via IHttpContextAccessor.
         options.SessionMode = HttpServerSessionMode.Stateless;
     });
 
@@ -91,7 +86,6 @@ static async Task<int> RunHttpAsync(string[] args)
 
     if (!app.Environment.IsDevelopment())
     {
-        // Plaintext HTTP is for local development only.
         app.UseHttpsRedirection();
         app.UseHsts();
     }
@@ -100,15 +94,15 @@ static async Task<int> RunHttpAsync(string[] args)
     app.UseAuthentication();
     app.UseAuthorization();
 
-    // Liveness: the process is up. Deliberately does not touch Linnworks, so a Linnworks outage
-    // cannot cause an orchestrator to restart healthy containers.
+    // Liveness check
     app.MapHealthChecks("/health", new() { Predicate = _ => false }).AllowAnonymous();
 
-    // Readiness: configuration is valid and Linnworks is reachable.
+    // Readiness check
     app.MapHealthChecks("/ready", new() { Predicate = check => check.Tags.Contains("ready") })
         .AllowAnonymous();
 
-    app.MapMcp("/mcp").RequireAuthorization("McpClient");
+    // Map MCP endpoint for Streamable HTTP discovery
+    app.MapMcp("/mcp");
 
     await app.RunAsync().ConfigureAwait(false);
     return 0;
