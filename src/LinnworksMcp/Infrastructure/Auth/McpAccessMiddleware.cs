@@ -55,11 +55,28 @@ public sealed class McpAccessMiddleware(
 
         if (validKeys.Count == 0)
         {
-            // No keys configured. Refuse rather than run open — with server-side Linnworks
-            // credentials in play, an open endpoint operates a real account.
+            if (!_options.RequireApiKey)
+            {
+                // Explicitly opted out of authentication; the startup warning covers the risk.
+                await next(context).ConfigureAwait(false);
+                return;
+            }
+
+            // No keys configured and none waived. Refuse rather than run open — with
+            // server-side Linnworks credentials in play, an open endpoint operates a real
+            // account.
             logger.LogError(
-                "Refusing MCP request: no client API keys are configured. "
-                + "Set McpAuth:ApiKey or McpAuth:ClientApiKeys.");
+                "Refusing MCP request: no client API keys are configured. Set McpAuth__ApiKey "
+                + "(or set McpAuth__RequireApiKey=false to intentionally run without auth).");
+
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "This server has no MCP client API key configured. Set McpAuth__ApiKey "
+                      + "on the server, then supply it as 'X-Api-Key' or "
+                      + "'Authorization: Bearer <key>'."
+            }).ConfigureAwait(false);
+            return;
         }
 
         // The 2026-07-28 revision requires clients to mirror the JSON-RPC method into this

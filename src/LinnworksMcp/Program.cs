@@ -75,6 +75,33 @@ static async Task<int> RunHttpAsync(string[] args)
 
     var app = builder.Build();
 
+    // Say plainly, at startup, whether this endpoint is protected. A server that is open to
+    // the internet should never be a surprise discovered later.
+    {
+        var auth = app.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<McpAuthOptions>>().Value;
+        var startupLog = app.Services
+            .GetRequiredService<ILoggerFactory>().CreateLogger("LinnworksMcp.Startup");
+
+        if (auth.GetAllValidKeys().Count > 0)
+        {
+            startupLog.LogInformation(
+                "MCP endpoint requires a client API key. Anonymous discovery: {Discovery}.",
+                auth.AllowAnonymousDiscovery ? "allowed" : "denied");
+        }
+        else if (auth.RequireApiKey)
+        {
+            startupLog.LogError(
+                "MCP endpoint is CLOSED: no client API key is configured. Set McpAuth__ApiKey.");
+        }
+        else
+        {
+            startupLog.LogWarning(
+                "MCP endpoint is UNAUTHENTICATED (McpAuth__RequireApiKey=false). Anyone who can "
+                + "reach it can invoke tools against the configured Linnworks account.");
+        }
+    }
+
     if (!app.Environment.IsDevelopment())
     {
         app.UseHttpsRedirection();

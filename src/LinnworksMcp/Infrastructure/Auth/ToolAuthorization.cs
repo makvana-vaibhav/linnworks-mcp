@@ -43,12 +43,25 @@ public sealed class McpAuthOptions
     public bool AllowDestructiveTools { get; set; } = true;
 
     /// <summary>
-    /// Allows unauthenticated callers to run discovery methods (initialize, tools/list, ping)
-    /// so a client's capability probe succeeds without a key. Tool execution still requires one.
-    /// Defaults to false: opening discovery leaks the tool catalogue, so it should be a
-    /// deliberate choice rather than something a probe failure pressures you into.
+    /// Allows unauthenticated callers to run discovery methods (initialize, tools/list, ping).
+    /// Tool execution still requires a key. Defaults to true because Claude connectors probe
+    /// the endpoint before they have anywhere to put credentials, and answering those probes
+    /// with 401 makes the connector report a connection failure. Discovery exposes only the
+    /// tool catalogue — no Linnworks data — so this is the safe half to open.
     /// </summary>
-    public bool AllowAnonymousDiscovery { get; set; }
+    public bool AllowAnonymousDiscovery { get; set; } = true;
+
+    /// <summary>
+    /// Whether an MCP client API key is mandatory. Leave true.
+    /// </summary>
+    /// <remarks>
+    /// Setting this false lets the server run with no key at all, which means anyone who can
+    /// reach the endpoint can invoke tools — and when server-side Linnworks credentials are
+    /// configured, that is anonymous access to a real Linnworks account, mutating tools
+    /// included. It exists as a deliberate, visible escape hatch (it warns loudly on every
+    /// startup) rather than something a deployment falls into by forgetting to set a key.
+    /// </remarks>
+    public bool RequireApiKey { get; set; } = true;
 
     /// <summary>
     /// API keys allowed to call destructive tools, when destructive tools are enabled.
