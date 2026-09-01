@@ -3,7 +3,6 @@ using LinnworksMcp.Infrastructure.Auth;
 using LinnworksMcp.Infrastructure.Linnworks;
 using LinnworksMcp.Infrastructure.Observability;
 using LinnworksMcp.Mcp;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ModelContextProtocol.AspNetCore;
 
@@ -57,21 +56,9 @@ static async Task<int> RunHttpAsync(string[] args)
     builder.Services.AddLinnworks();
     builder.Services.AddHttpContextAccessor();
 
-    // Credentials arrive per request. See HeaderLinnworksCredentialProvider for why this is
-    // headers rather than MCP session state.
+    // Credentials & Auth arrive per request and are enforced inside ToolAuthorizer and LinnworksCredentialProvider
     builder.Services.AddScoped<ILinnworksCredentialProvider, HeaderLinnworksCredentialProvider>();
     builder.Services.AddScoped<IToolAuthorizer, ToolAuthorizer>();
-
-    builder.Services
-        .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
-        .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-            ApiKeyAuthenticationHandler.SchemeName, _ => { });
-
-    builder.Services
-        .AddAuthorizationBuilder()
-        .AddPolicy("McpClient", policy => policy
-            .AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName)
-            .RequireAuthenticatedUser());
 
     builder.Services.AddHealthChecks()
         .AddCheck<LinnworksReadinessCheck>(
@@ -91,15 +78,12 @@ static async Task<int> RunHttpAsync(string[] args)
     }
 
     app.UseMiddleware<CorrelationIdMiddleware>();
-    app.UseAuthentication();
-    app.UseAuthorization();
 
     // Liveness check
-    app.MapHealthChecks("/health", new() { Predicate = _ => false }).AllowAnonymous();
+    app.MapHealthChecks("/health", new() { Predicate = _ => false });
 
     // Readiness check
-    app.MapHealthChecks("/ready", new() { Predicate = check => check.Tags.Contains("ready") })
-        .AllowAnonymous();
+    app.MapHealthChecks("/ready", new() { Predicate = check => check.Tags.Contains("ready") });
 
     // Map MCP endpoint for Streamable HTTP discovery
     app.MapMcp("/mcp");
